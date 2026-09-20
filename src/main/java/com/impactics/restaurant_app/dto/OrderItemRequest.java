@@ -2,9 +2,11 @@ package com.impactics.restaurant_app.dto;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import lombok.Data;
 
 import java.util.UUID;
 
+@Data
 public class OrderItemRequest {
 
     @NotNull(message = "menuItemId is required")
@@ -15,15 +17,4 @@ public class OrderItemRequest {
     private Integer quantity;
 
     private String specialInstructions;
-
-    // Getters and setters
-
-    public UUID getMenuItemId() { return menuItemId; }
-    public void setMenuItemId(UUID menuItemId) { this.menuItemId = menuItemId; }
-
-    public Integer getQuantity() { return quantity; }
-    public void setQuantity(Integer quantity) { this.quantity = quantity; }
-
-    public String getSpecialInstructions() { return specialInstructions; }
-    public void setSpecialInstructions(String specialInstructions) { this.specialInstructions = specialInstructions; }
 }

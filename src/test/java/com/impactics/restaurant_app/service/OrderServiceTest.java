@@ -4,6 +4,7 @@ import com.impactics.restaurant_app.dto.CreateOrderRequest;
 import com.impactics.restaurant_app.dto.OrderItemRequest;
 import com.impactics.restaurant_app.dto.OrderResponse;
 import com.impactics.restaurant_app.entity.*;
+import com.impactics.restaurant_app.exception.InvalidOrderException;
 import com.impactics.restaurant_app.exception.ResourceNotFoundException;
 import com.impactics.restaurant_app.repository.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,16 +62,19 @@ class OrderServiceTest {
         user = new User();
         user.setId(userId);
         user.setEmail("john@example.com");
+        user.setStatus("ACTIVE");
 
         restaurant = new Restaurant();
         restaurant.setId(restaurantId);
         restaurant.setName("Pizza Palace");
         restaurant.setDeliveryFee(new BigDecimal("2.99"));
+        restaurant.setIsActive(true);
 
         menuItem = new MenuItem();
         menuItem.setId(menuItemId);
         menuItem.setName("Margherita Pizza");
         menuItem.setPrice(new BigDecimal("12.99"));
+        menuItem.setIsAvailable(true);
     }
 
     private CreateOrderRequest buildValidOrderRequest(int quantity) {
@@ -172,6 +176,51 @@ class OrderServiceTest {
 
         assertThatThrownBy(() -> orderService.createOrder(request))
                 .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(menuItemId.toString());
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createOrder_whenUserNotActive_throwsInvalidOrderException() {
+        user.setStatus("INACTIVE");
+        CreateOrderRequest request = buildValidOrderRequest(1);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> orderService.createOrder(request))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining(userId.toString());
+
+        verify(restaurantRepository, never()).findById(any());
+    }
+
+    @Test
+    void createOrder_whenRestaurantNotActive_throwsInvalidOrderException() {
+        restaurant.setIsActive(false);
+        CreateOrderRequest request = buildValidOrderRequest(1);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findById(restaurantId)).thenReturn(Optional.of(restaurant));
+
+        assertThatThrownBy(() -> orderService.createOrder(request))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining(restaurantId.toString());
+
+        verify(menuItemRepository, never()).findById(any());
+    }
+
+    @Test
+    void createOrder_whenMenuItemNotAvailable_throwsInvalidOrderException() {
+        menuItem.setIsAvailable(false);
+        CreateOrderRequest request = buildValidOrderRequest(1);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findById(restaurantId)).thenReturn(Optional.of(restaurant));
+        when(menuItemRepository.findById(menuItemId)).thenReturn(Optional.of(menuItem));
+
+        assertThatThrownBy(() -> orderService.createOrder(request))
+                .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining(menuItemId.toString());
 
         verify(orderRepository, never()).saveAndFlush(any());

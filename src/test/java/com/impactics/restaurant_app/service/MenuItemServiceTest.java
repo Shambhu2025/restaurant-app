@@ -63,7 +63,7 @@ class MenuItemServiceTest {
     @Test
     void getMenuByRestaurantId_whenRestaurantExists_returnsMenuItems() {
         when(restaurantRepository.existsById(restaurantId)).thenReturn(true);
-        when(menuItemRepository.findByRestaurantId(restaurantId)).thenReturn(List.of(menuItem));
+        when(menuItemRepository.findByRestaurantIdAndIsAvailableTrue(restaurantId)).thenReturn(List.of(menuItem));
 
         List<MenuItemResponse> result = menuItemService.getMenuByRestaurantId(restaurantId);
 

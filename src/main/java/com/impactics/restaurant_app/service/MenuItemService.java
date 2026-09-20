@@ -8,12 +8,17 @@ import com.impactics.restaurant_app.exception.ResourceNotFoundException;
 import com.impactics.restaurant_app.repository.MenuItemRepository;
 import com.impactics.restaurant_app.repository.RestaurantRepository;
 import org.springframework.stereotype.Service;
+import com.impactics.restaurant_app.config.CacheConfig;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class MenuItemService {
 
     private final MenuItemRepository menuItemRepository;
@@ -24,18 +29,20 @@ public class MenuItemService {
         this.restaurantRepository = restaurantRepository;
     }
 
+    @Cacheable(value = CacheConfig.MENU_CACHE, key = "'restaurant:' + #restaurantId")
     public List<MenuItemResponse> getMenuByRestaurantId(UUID restaurantId) {
-        // Ensure the restaurant actually exists before querying its menu
-        if (!restaurantRepository.existsById(restaurantId)) {
-            throw new ResourceNotFoundException("Restaurant not found with id: " + restaurantId);
-        }
-
-        return menuItemRepository.findByRestaurantId(restaurantId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+    if (!restaurantRepository.existsById(restaurantId)) {
+        throw new ResourceNotFoundException("Restaurant not found with id: " + restaurantId);
     }
 
+    log.info("Cache MISS - fetching menu for restaurant {} from database", restaurantId);
+    return menuItemRepository.findByRestaurantIdAndIsAvailableTrue(restaurantId)
+            .stream()
+            .map(this::toResponse)
+            .collect(Collectors.toList());
+    }
+
+    @CacheEvict(value = CacheConfig.MENU_CACHE, key = "'restaurant:' + #restaurantId")
     public MenuItemResponse createMenuItem(UUID restaurantId, CreateMenuItemRequest request) {
         Restaurant restaurant = restaurantRepository.findById(restaurantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + restaurantId));

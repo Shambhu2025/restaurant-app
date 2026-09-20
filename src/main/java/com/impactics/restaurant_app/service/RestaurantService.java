@@ -6,12 +6,17 @@ import com.impactics.restaurant_app.entity.Restaurant;
 import com.impactics.restaurant_app.exception.ResourceNotFoundException;
 import com.impactics.restaurant_app.repository.RestaurantRepository;
 import org.springframework.stereotype.Service;
+import com.impactics.restaurant_app.config.CacheConfig;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class RestaurantService {
 
     private final RestaurantRepository restaurantRepository;
@@ -20,8 +25,10 @@ public class RestaurantService {
         this.restaurantRepository = restaurantRepository;
     }
 
+    @Cacheable(value = CacheConfig.RESTAURANTS_CACHE, key = "'all'")
     public List<RestaurantResponse> getAllRestaurants() {
-        return restaurantRepository.findAll()
+        log.info("Cache MISS - fetching all active restaurants from database");
+        return restaurantRepository.findByIsActiveTrue()
                 .stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
@@ -33,6 +40,7 @@ public class RestaurantService {
         return toResponse(restaurant);
     }
 
+    @CacheEvict(value = CacheConfig.RESTAURANTS_CACHE, key = "'all'")
     public RestaurantResponse createRestaurant(CreateRestaurantRequest request) {
         Restaurant restaurant = new Restaurant();
         restaurant.setName(request.getName());

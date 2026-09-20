@@ -64,3 +64,10 @@ CREATE TABLE order_items (
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (menu_item_id) REFERENCES menu_items(id)
 );
+
+-- Indexes for foreign key columns and frequently queried fields
+CREATE INDEX idx_menu_items_restaurant_id ON menu_items(restaurant_id);
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_orders_restaurant_id ON orders(restaurant_id);
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_order_items_menu_item_id ON order_items(menu_item_id);

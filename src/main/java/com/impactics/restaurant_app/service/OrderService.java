@@ -2,6 +2,7 @@ package com.impactics.restaurant_app.service;
 
 import com.impactics.restaurant_app.dto.*;
 import com.impactics.restaurant_app.entity.*;
+import com.impactics.restaurant_app.exception.InvalidOrderException;
 import com.impactics.restaurant_app.exception.ResourceNotFoundException;
 import com.impactics.restaurant_app.repository.*;
 import org.springframework.stereotype.Service;
@@ -36,10 +37,18 @@ public class OrderService {
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + request.getUserId()));
+        .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + request.getUserId()));
+
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new InvalidOrderException("User is not active: " + request.getUserId());
+        }
 
         Restaurant restaurant = restaurantRepository.findById(request.getRestaurantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + request.getRestaurantId()));
+
+        if (!Boolean.TRUE.equals(restaurant.getIsActive())) {
+            throw new InvalidOrderException("Restaurant is not active: " + request.getRestaurantId());
+        }
 
         // Build order items, looking up real prices from the database (never trust client-supplied prices)
         List<OrderItem> orderItems = new ArrayList<>();
@@ -49,6 +58,10 @@ public class OrderService {
             MenuItem menuItem = menuItemRepository.findById(itemRequest.getMenuItemId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Menu item not found with id: " + itemRequest.getMenuItemId()));
+            
+            if (!Boolean.TRUE.equals(menuItem.getIsAvailable())) {
+                throw new InvalidOrderException("Menu item is not available: " + itemRequest.getMenuItemId());
+            }
 
             BigDecimal unitPrice = menuItem.getPrice();
             BigDecimal totalPrice = unitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()));

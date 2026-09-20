@@ -49,13 +49,13 @@ class RestaurantServiceTest {
 
     @Test
     void getAllRestaurants_returnsListOfRestaurants() {
-        when(restaurantRepository.findAll()).thenReturn(List.of(restaurant));
+        when(restaurantRepository.findByIsActiveTrue()).thenReturn(List.of(restaurant));
 
         List<RestaurantResponse> result = restaurantService.getAllRestaurants();
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getName()).isEqualTo("Pizza Palace");
-        verify(restaurantRepository, times(1)).findAll();
+        verify(restaurantRepository, times(1)).findByIsActiveTrue();
     }
 
     @Test
