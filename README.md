@@ -48,7 +48,7 @@ docker compose up -d
 
 # 3. Run tests (52 tests total)
 ./mvnw test
-
+```
 ## Full Report
 
 For architecture details, design decisions, cache TTL policies, and k6 load testing results, see the full milestone reports:
