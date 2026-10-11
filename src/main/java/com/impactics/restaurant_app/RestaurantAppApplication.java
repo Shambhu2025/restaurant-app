@@ -7,13 +7,26 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
-import javax.sql.DataSource;
-
 @SpringBootApplication
 public class RestaurantAppApplication {
 
 	public static void main(String[] args) {
+		runFlywayMigrations();
 		SpringApplication.run(RestaurantAppApplication.class, args);
+	}
+
+	private static void runFlywayMigrations() {
+		String dbUrl = System.getenv().getOrDefault("DB_URL", "jdbc:postgresql://localhost:5432/fast_food");
+		String dbUsername = System.getenv().getOrDefault("DB_USERNAME", "fastfood");
+		String dbPassword = System.getenv().getOrDefault("DB_PASSWORD", "fastfood");
+
+		Flyway flyway = Flyway.configure()
+				.dataSource(dbUrl, dbUsername, dbPassword)
+				.locations("classpath:db/migration")
+				.baselineOnMigrate(true)
+				.load();
+
+		flyway.migrate();
 	}
 
 	@Bean
@@ -23,18 +36,5 @@ public class RestaurantAppApplication {
 						.title("Impactis Restaurant API")
 						.version("1.0")
 						.description("RESTful backend for the restaurant ordering platform."));
-	}
-
-	@Bean
-	public Flyway forceFlywayMigration(DataSource dataSource) {
-		Flyway flyway = Flyway.configure()
-				.dataSource(dataSource)
-				.locations("classpath:db/migration", "filesystem:src/main/resources/db/migration")
-				.baselineOnMigrate(true)
-				.load();
-		
-		// This forces execution, bypassing all Spring Boot auto-config rules
-		flyway.migrate();
-		return flyway;
 	}
 }

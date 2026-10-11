@@ -78,4 +78,17 @@ class MenuItemControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Margherita Pizza"));
     }
+
+    @Test
+    void getMenu_withoutRestaurantId_returns400() throws Exception {
+        mockMvc.perform(get("/menu"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void getMenu_withMalformedRestaurantId_returns400() throws Exception {
+        mockMvc.perform(get("/menu").param("restaurantId", "abc"))
+                .andExpect(status().isBadRequest());
+    }
 }

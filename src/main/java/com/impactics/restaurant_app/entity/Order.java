@@ -22,6 +22,12 @@ public class Order {
     @UuidGenerator
     private UUID id;
 
+    @Column(name = "idempotency_key", unique = true)
+    private UUID idempotencyKey;
+
+    @Column(name = "failure_reason")
+    private String failureReason;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

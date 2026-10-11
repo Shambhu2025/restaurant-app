@@ -22,4 +22,5 @@ public class OrderResponse {
     private String status;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private String failureReason;
 }

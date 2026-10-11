@@ -1,107 +1,96 @@
 package com.impactics.restaurant_app.service;
 
-import com.impactics.restaurant_app.dto.*;
-import com.impactics.restaurant_app.entity.*;
-import com.impactics.restaurant_app.exception.InvalidOrderException;
+import com.impactics.restaurant_app.config.KafkaConfig;
+import com.impactics.restaurant_app.dto.CreateOrderRequest;
+import com.impactics.restaurant_app.dto.OrderEvent;
+import com.impactics.restaurant_app.dto.OrderItemResponse;
+import com.impactics.restaurant_app.dto.OrderResponse;
+import com.impactics.restaurant_app.entity.Order;
+import com.impactics.restaurant_app.entity.OrderItem;
+import com.impactics.restaurant_app.entity.Restaurant;
+import com.impactics.restaurant_app.entity.User;
 import com.impactics.restaurant_app.exception.ResourceNotFoundException;
-import com.impactics.restaurant_app.repository.*;
+import com.impactics.restaurant_app.repository.OrderRepository;
+import com.impactics.restaurant_app.repository.RestaurantRepository;
+import com.impactics.restaurant_app.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final RestaurantRepository restaurantRepository;
-    private final MenuItemRepository menuItemRepository;
+    private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
 
     public OrderService(OrderRepository orderRepository,
-                         OrderItemRepository orderItemRepository,
                          UserRepository userRepository,
                          RestaurantRepository restaurantRepository,
-                         MenuItemRepository menuItemRepository) {
+                         KafkaTemplate<String, OrderEvent> kafkaTemplate) {
         this.orderRepository = orderRepository;
-        this.orderItemRepository = orderItemRepository;
         this.userRepository = userRepository;
         this.restaurantRepository = restaurantRepository;
-        this.menuItemRepository = menuItemRepository;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
-    @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
+        // Cheap referential-integrity checks only - NOT the full business validation
+        // (active/available checks, price calculation). That happens asynchronously
+        // in the consumer, once the message is picked up.
         User user = userRepository.findById(request.getUserId())
-        .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + request.getUserId()));
-
-        if (!"ACTIVE".equals(user.getStatus())) {
-            throw new InvalidOrderException("User is not active: " + request.getUserId());
-        }
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + request.getUserId()));
 
         Restaurant restaurant = restaurantRepository.findById(request.getRestaurantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Restaurant not found with id: " + request.getRestaurantId()));
 
-        if (!Boolean.TRUE.equals(restaurant.getIsActive())) {
-            throw new InvalidOrderException("Restaurant is not active: " + request.getRestaurantId());
-        }
-
-        // Build order items, looking up real prices from the database (never trust client-supplied prices)
-        List<OrderItem> orderItems = new ArrayList<>();
-        BigDecimal subtotal = BigDecimal.ZERO;
-
-        for (OrderItemRequest itemRequest : request.getItems()) {
-            MenuItem menuItem = menuItemRepository.findById(itemRequest.getMenuItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Menu item not found with id: " + itemRequest.getMenuItemId()));
-            
-            if (!Boolean.TRUE.equals(menuItem.getIsAvailable())) {
-                throw new InvalidOrderException("Menu item is not available: " + itemRequest.getMenuItemId());
-            }
-
-            BigDecimal unitPrice = menuItem.getPrice();
-            BigDecimal totalPrice = unitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
-            subtotal = subtotal.add(totalPrice);
-
-            OrderItem orderItem = new OrderItem();
-            orderItem.setMenuItem(menuItem);
-            orderItem.setQuantity(itemRequest.getQuantity());
-            orderItem.setUnitPrice(unitPrice);
-            orderItem.setTotalPrice(totalPrice);
-            orderItem.setSpecialInstructions(itemRequest.getSpecialInstructions());
-
-            orderItems.add(orderItem);
-        }
-
-        BigDecimal deliveryFee = restaurant.getDeliveryFee() != null ? restaurant.getDeliveryFee() : BigDecimal.ZERO;
-        BigDecimal total = subtotal.add(deliveryFee);
+        UUID idempotencyKey = UUID.randomUUID();
 
         Order order = new Order();
         order.setUser(user);
         order.setRestaurant(restaurant);
-        order.setSubtotal(subtotal);
-        order.setDeliveryFee(deliveryFee);
-        order.setTotal(total);
+        order.setStatus("PENDING");
         order.setDeliveryAddress(request.getDeliveryAddress());
         order.setDeliveryNotes(request.getDeliveryNotes());
-        order.setStatus("PENDING");
+        order.setIdempotencyKey(idempotencyKey);
 
         Order savedOrder = orderRepository.saveAndFlush(order);
 
-        // Now that the order has an id, attach it to each item and save them
-        for (OrderItem item : orderItems) {
-            item.setOrder(savedOrder);
-        }
-        List<OrderItem> savedItems = orderItemRepository.saveAll(orderItems);
+        OrderEvent event = new OrderEvent();
+        event.setOrderId(savedOrder.getId());
+        event.setIdempotencyKey(idempotencyKey);
+        event.setUserId(request.getUserId());
+        event.setRestaurantId(request.getRestaurantId());
+        event.setItems(request.getItems());
+        event.setDeliveryAddress(request.getDeliveryAddress());
+        event.setDeliveryNotes(request.getDeliveryNotes());
 
-        return toResponse(savedOrder, savedItems);
+        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, request.getRestaurantId().toString(), event);
+
+        log.info("Order {} queued for processing (idempotencyKey={})", savedOrder.getId(), idempotencyKey);
+
+        return toResponse(savedOrder, Collections.emptyList());
     }
 
-    private OrderResponse toResponse(Order order, List<OrderItem> items) {
+    public OrderResponse getOrderById(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        List<OrderItemResponse> itemResponses = order.getOrderItems() == null
+                ? Collections.emptyList()
+                : order.getOrderItems().stream().map(this::toItemResponse).collect(Collectors.toList());
+
+        return toResponse(order, itemResponses);
+    }
+
+    private OrderResponse toResponse(Order order, List<OrderItemResponse> items) {
         OrderResponse response = new OrderResponse();
         response.setId(order.getId());
         response.setUserId(order.getUser().getId());
@@ -112,14 +101,10 @@ public class OrderService {
         response.setDeliveryAddress(order.getDeliveryAddress());
         response.setDeliveryNotes(order.getDeliveryNotes());
         response.setStatus(order.getStatus());
+        response.setFailureReason(order.getFailureReason());
         response.setCreatedAt(order.getCreatedAt());
         response.setUpdatedAt(order.getUpdatedAt());
-
-        List<OrderItemResponse> itemResponses = items.stream()
-                .map(this::toItemResponse)
-                .collect(Collectors.toList());
-        response.setItems(itemResponses);
-
+        response.setItems(items);
         return response;
     }
 
